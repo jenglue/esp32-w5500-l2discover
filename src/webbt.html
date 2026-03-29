@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>T-Lite Pro | 網路分析儀</title>
+    <style>
+        :root { --neon-blue: #00f2ff; --neon-purple: #bc13fe; }
+        body { 
+            background-color: #050505; 
+            color: white; 
+            font-family: 'Segoe UI', 'Courier New', monospace; 
+            display: flex; flex-direction: column; align-items: center;
+            justify-content: center; min-height: 100vh; margin: 0;
+        }
+        h1 { 
+            text-transform: uppercase; letter-spacing: 5px;
+            text-shadow: 0 0 10px var(--neon-blue);
+            color: var(--neon-blue);
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--neon-blue);
+            border-radius: 15px; padding: 30px;
+            box-shadow: 0 0 20px rgba(0, 242, 255, 0.2);
+            width: 90%; max-width: 400px;
+        }
+        .data-field { margin-bottom: 25px; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        .label { font-size: 0.8rem; color: #888; text-transform: uppercase; }
+        .value { font-size: 1.5rem; font-weight: bold; color: var(--neon-purple); text-shadow: 0 0 5px var(--neon-purple); }
+        button {
+            background: transparent; border: 2px solid var(--neon-blue);
+            color: var(--neon-blue); padding: 12px 24px; font-size: 1rem;
+            cursor: pointer; border-radius: 50px; transition: 0.3s;
+            text-transform: uppercase; font-weight: bold;
+        }
+        button:hover { background: var(--neon-blue); color: black; box-shadow: 0 0 30px var(--neon-blue); }
+        #status { margin-top: 15px; font-size: 0.9rem; color: #555; }
+    </style>
+</head>
+<body>
+
+    <h1>Net-Scanner</h1>
+
+    <div class="container">
+        <div class="data-field">
+            <div class="label">Switch Hostname</div>
+            <div id="swName" class="value">OFFLINE</div>
+        </div>
+        <div class="data-field">
+            <div class="label">Port Identifier</div>
+            <div id="swPort" class="value">---</div>
+        </div>
+        <div style="text-align: center;">
+            <button onclick="connectBLE()">Connect Sensor</button>
+            <div id="status">等待藍牙連線...</div>
+        </div>
+    </div>
+
+    <script>
+        const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+        const CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+
+        async function connectBLE() {
+            const statusEl = document.getElementById('status');
+            try {
+                statusEl.innerText = "正在請求裝置...";
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ name: 'T-Lite-Sniffer' }],
+                    optionalServices: [SERVICE_UUID]
+                });
+
+                statusEl.innerText = "正在連線伺服器...";
+                const server = await device.gatt.connect();
+                
+                statusEl.innerText = "正在獲取服務...";
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                
+                const characteristic = await service.getCharacteristic(CHAR_UUID);
+                
+                statusEl.innerText = "連線成功！監聽數據中...";
+                statusEl.style.color = "#00ff00";
+
+                // 監聽數據變化
+                characteristic.startNotifications();
+                characteristic.addEventListener('characteristicvaluechanged', (event) => {
+                    const decoder = new TextDecoder('utf-8');
+                    const value = decoder.decode(event.target.value);
+                    const parts = value.split('|');
+                    
+                    document.getElementById('swName').innerText = parts[0] || "Unknown";
+                    document.getElementById('swPort').innerText = parts[1] || "Unknown";
+                });
+
+            } catch (error) {
+                console.error(error);
+                statusEl.innerText = "連線失敗: " + error;
+                statusEl.style.color = "#ff0000";
+            }
+        }
+    </script>
+</body>
+</html>
