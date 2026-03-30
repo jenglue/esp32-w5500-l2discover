@@ -167,6 +167,8 @@ void setup() {
 
     Serial.println("===== Setup Complete =====");
     Serial.println("[INFO] L2 sniffing active, DHCP will run in background");
+
+    pageEnteredTime = millis(); // 初始化換頁計時基準
 }
 
 void loop() {
@@ -180,30 +182,31 @@ void loop() {
         delay(250); 
     }
 
-    // 自動換頁：第一頁跑馬燈播完+2秒後切第二頁，第二頁10秒回第一頁
+    // 自動換頁：第一頁至少 10 秒，跑馬燈完成後再停 2 秒；第二頁 10 秒回第一頁
     if (currentPage == 0) {
+        bool timeReady = (millis() - pageEnteredTime >= NO_DATA_SWITCH_TIME);
+        bool marqueeReady = true; // 無資料時預設就緒
         if (hasDiscoveryData) {
+            // 偵測跑馬燈是否完成一輪
             if (!marqueeFirstCycleDone) {
                 if (isMarqueeCycleDone(swName, scrollOffsetName) &&
                     isMarqueeCycleDone(swPort, scrollOffsetPort)) {
                     marqueeFirstCycleDone = true;
                     marqueePauseStart = millis();
                 }
-            } else if (millis() - marqueePauseStart > MARQUEE_PAUSE_TIME) {
-                currentPage = 1;
-                pageEnteredTime = millis();
-                marqueeFirstCycleDone = false;
-                scrollOffsetName = 0;
-                scrollOffsetPort = 0;
-            }
-        } else {
-            if (millis() - pageEnteredTime > NO_DATA_SWITCH_TIME) {
-                currentPage = 1;
-                pageEnteredTime = millis();
+                marqueeReady = false; // 跑馬燈還沒完
+            } else {
+                // 跑馬燈完成，等待 2 秒暫停
+                marqueeReady = (millis() - marqueePauseStart >= MARQUEE_PAUSE_TIME);
             }
         }
+        // 兩個條件都滿足才切換
+        if (timeReady && marqueeReady) {
+            currentPage = 1;
+            pageEnteredTime = millis();
+        }
     } else if (currentPage == 1) {
-        if (millis() - pageEnteredTime > PAGE_IP_DISPLAY_TIME) {
+        if (millis() - pageEnteredTime >= PAGE_IP_DISPLAY_TIME) {
             currentPage = 0;
             pageEnteredTime = millis();
             marqueeFirstCycleDone = false;
