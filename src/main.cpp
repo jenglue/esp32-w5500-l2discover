@@ -25,6 +25,7 @@
 void updateBLE();
 void drawUI();
 void drawMarquee(int x, int y, int maxWidth, const char* text, int &scrollOffset);
+bool isMarqueeCycleDone(const char* text, int scrollOffset);
 void parseLLDP(uint8_t* d, int l);
 void parseCDP(uint8_t* d, int l);
 
@@ -45,15 +46,18 @@ String dashboardURL = "https://your-url-here.io"; // 稍後替換為你的網址
 int scrollOffsetName = 0;
 int scrollOffsetPort = 0;
 unsigned long lastScrollTime = 0;
-const unsigned long SCROLL_INTERVAL = 200; // 每 200ms 移動
+const unsigned long SCROLL_INTERVAL = 80; // 每 80ms 移動 (快速跑馬燈)
 const int CHAR_WIDTH = 6; // u8g2_font_6x12_tf 字元寬度
 const int DISPLAY_TEXT_WIDTH = 98; // 可顯示寬度 (扣除左側標籤和右側頁碼)
 
 // --- 自動換頁狀態 ---
-unsigned long lastUserAction = 0;
-unsigned long lastAutoSwitch = 0;
-const unsigned long AUTO_SWITCH_INTERVAL = 10000; // 10 秒自動換頁
-bool autoSwitchActive = true;
+unsigned long pageEnteredTime = 0;
+bool hasDiscoveryData = false;
+bool marqueeFirstCycleDone = false;
+unsigned long marqueePauseStart = 0;
+const unsigned long PAGE_IP_DISPLAY_TIME = 10000;  // 第二頁顯示 10 秒
+const unsigned long MARQUEE_PAUSE_TIME = 2000;     // 跑馬燈完成後暫停 2 秒
+const unsigned long NO_DATA_SWITCH_TIME = 10000;   // 無資料時 10 秒切換
 
 // --- DHCP 背景處理 ---
 bool dhcpObtained = false;
@@ -69,7 +73,7 @@ void drawQRCode(const char* url) {
     int scale = 2; // 放大兩倍方便掃描
     int qrWidth = qrcode.size * scale;
     int qrHeight = qrcode.size * scale;
-    int offset_x = 128 - qrWidth; // 靠右對齊
+    int offset_x = 120 - qrWidth; // 靠右但留空間給頁碼指示 (122-125)
     int offset_y = (64 - qrHeight) / 2; // 垂直置中
 
     for (uint8_t y = 0; y < qrcode.size; y++) {
@@ -169,20 +173,43 @@ void loop() {
     // 1. 按鈕換頁
     if (digitalRead(BTN_PIN) == LOW) {
         currentPage = (currentPage + 1) % 4;
-        lastUserAction = millis();
-        autoSwitchActive = false;
+        pageEnteredTime = millis();
+        marqueeFirstCycleDone = false;
+        scrollOffsetName = 0;
+        scrollOffsetPort = 0;
         delay(250); 
     }
 
-    // 自動換頁：無操作時每 10 秒在第 1 頁與第 2 頁間切換
-    if (!autoSwitchActive && millis() - lastUserAction > AUTO_SWITCH_INTERVAL) {
-        autoSwitchActive = true;
-        currentPage = 0;
-        lastAutoSwitch = millis();
-    }
-    if (autoSwitchActive && millis() - lastAutoSwitch > AUTO_SWITCH_INTERVAL) {
-        lastAutoSwitch = millis();
-        currentPage = (currentPage == 0) ? 1 : 0;
+    // 自動換頁：第一頁跑馬燈播完+2秒後切第二頁，第二頁10秒回第一頁
+    if (currentPage == 0) {
+        if (hasDiscoveryData) {
+            if (!marqueeFirstCycleDone) {
+                if (isMarqueeCycleDone(swName, scrollOffsetName) &&
+                    isMarqueeCycleDone(swPort, scrollOffsetPort)) {
+                    marqueeFirstCycleDone = true;
+                    marqueePauseStart = millis();
+                }
+            } else if (millis() - marqueePauseStart > MARQUEE_PAUSE_TIME) {
+                currentPage = 1;
+                pageEnteredTime = millis();
+                marqueeFirstCycleDone = false;
+                scrollOffsetName = 0;
+                scrollOffsetPort = 0;
+            }
+        } else {
+            if (millis() - pageEnteredTime > NO_DATA_SWITCH_TIME) {
+                currentPage = 1;
+                pageEnteredTime = millis();
+            }
+        }
+    } else if (currentPage == 1) {
+        if (millis() - pageEnteredTime > PAGE_IP_DISPLAY_TIME) {
+            currentPage = 0;
+            pageEnteredTime = millis();
+            marqueeFirstCycleDone = false;
+            scrollOffsetName = 0;
+            scrollOffsetPort = 0;
+        }
     }
 
     // 2. 背景 DHCP 處理
@@ -263,7 +290,15 @@ void updateBLE() {
     pCharacteristic->notify();
 }
 
-// --- 跑馬燈繪製輔助函式 ---
+// --- 跑馬燈判斷是否完成一輪 ---
+bool isMarqueeCycleDone(const char* text, int scrollOffset) {
+    int textWidth = strlen(text) * CHAR_WIDTH;
+    if (textWidth <= DISPLAY_TEXT_WIDTH) return true; // 不需捲動
+    int cycleWidth = textWidth + CHAR_WIDTH * 3; // 文字寬度 + 間隔
+    return scrollOffset >= cycleWidth;
+}
+
+// --- 跑馬燈繪製輔助函式 (捲動一次後停止) ---
 void drawMarquee(int x, int y, int maxWidth, const char* text, int &scrollOffset) {
     int textWidth = strlen(text) * CHAR_WIDTH;
     if (textWidth <= maxWidth) {
@@ -272,24 +307,24 @@ void drawMarquee(int x, int y, int maxWidth, const char* text, int &scrollOffset
         u8g2.print(text);
         scrollOffset = 0;
     } else {
-        // 文字太長，做跑馬燈效果
-        // 在末尾加上間隔後循環
-        int totalWidth = textWidth + maxWidth; // 完整循環寬度
-        int offset = scrollOffset % totalWidth;
+        // 文字太長，做跑馬燈效果 (單次捲動)
+        int gapWidth = CHAR_WIDTH * 3; // 間隔 3 個字元
+        int cycleWidth = textWidth + gapWidth;
+        int offset = min(scrollOffset, cycleWidth); // 限制不超過一輪
         // 使用 clip window 限制繪製範圍
         u8g2.setClipWindow(x, y - 12, x + maxWidth, y + 2);
         u8g2.setCursor(x - offset, y);
         u8g2.print(text);
-        // 在原文後面加間隔重複繪製，實現無縫循環
-        u8g2.setCursor(x - offset + textWidth + CHAR_WIDTH * 3, y);
+        // 第二份副本，實現無縫捲動
+        u8g2.setCursor(x - offset + cycleWidth, y);
         u8g2.print(text);
         u8g2.setMaxClipWindow(); // 恢復全螢幕繪製
     }
 }
 
 void drawUI() {
-    // 更新跑馬燈偏移
-    if (millis() - lastScrollTime > SCROLL_INTERVAL) {
+    // 更新跑馬燈偏移 (一輪完成後停止)
+    if (!marqueeFirstCycleDone && millis() - lastScrollTime > SCROLL_INTERVAL) {
         lastScrollTime = millis();
         scrollOffsetName += 2; // 每次移動 2 像素
         scrollOffsetPort += 2;
@@ -350,7 +385,7 @@ void parseLLDP(uint8_t* d, int l) {
     while (p < l - 2) {
         uint16_t tlv = (d[p] << 8) | d[p+1];
         int type = tlv >> 9; int len = tlv & 0x01FF;
-        if (type == 5) { int n = min(len, 62); memcpy(swName, d + p + 2, n); swName[n] = '\0'; scrollOffsetName = 0; }
+        if (type == 5) { int n = min(len, 62); memcpy(swName, d + p + 2, n); swName[n] = '\0'; scrollOffsetName = 0; hasDiscoveryData = true; }
         if (type == 7) { int n = min(len, 62); memcpy(swPort, d + p + 2, n); swPort[n] = '\0'; scrollOffsetPort = 0; }
         // IEEE 802.1 Organizationally Specific TLV: Port VLAN ID
         if (type == 127 && len >= 7) {
@@ -369,7 +404,7 @@ void parseCDP(uint8_t* d, int l) {
         uint16_t type = (d[p] << 8) | d[p+1]; uint16_t len = (d[p+2] << 8) | d[p+3];
         if (len < 4) break; // 防止無限迴圈
         int dataLen = len - 4;
-        if (type == 0x0001) { int n = min(dataLen, 62); memcpy(swName, d + p + 4, n); swName[n] = '\0'; scrollOffsetName = 0; }
+        if (type == 0x0001) { int n = min(dataLen, 62); memcpy(swName, d + p + 4, n); swName[n] = '\0'; scrollOffsetName = 0; hasDiscoveryData = true; }
         if (type == 0x0003) { int n = min(dataLen, 62); memcpy(swPort, d + p + 4, n); swPort[n] = '\0'; scrollOffsetPort = 0; }
         if (type == 0x000A && dataLen >= 2) { // Native VLAN
             uint16_t vlanId = (d[p+4] << 8) | d[p+5];
