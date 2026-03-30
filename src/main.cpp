@@ -388,8 +388,8 @@ void parseLLDP(uint8_t* d, int l) {
     while (p < l - 2) {
         uint16_t tlv = (d[p] << 8) | d[p+1];
         int type = tlv >> 9; int len = tlv & 0x01FF;
-        if (type == 5) { int n = min(len, 62); memcpy(swName, d + p + 2, n); swName[n] = '\0'; scrollOffsetName = 0; hasDiscoveryData = true; }
-        if (type == 7) { int n = min(len, 62); memcpy(swPort, d + p + 2, n); swPort[n] = '\0'; scrollOffsetPort = 0; }
+        if (type == 5) { int n = min(len, 62); memcpy(swName, d + p + 2, n); swName[n] = '\0'; hasDiscoveryData = true; }
+        if (type == 7) { int n = min(len, 62); memcpy(swPort, d + p + 2, n); swPort[n] = '\0'; }
         // IEEE 802.1 Organizationally Specific TLV: Port VLAN ID
         if (type == 127 && len >= 7) {
             // OUI: 00:80:C2, Subtype: 1 = Port VLAN ID
@@ -407,8 +407,8 @@ void parseCDP(uint8_t* d, int l) {
         uint16_t type = (d[p] << 8) | d[p+1]; uint16_t len = (d[p+2] << 8) | d[p+3];
         if (len < 4) break; // 防止無限迴圈
         int dataLen = len - 4;
-        if (type == 0x0001) { int n = min(dataLen, 62); memcpy(swName, d + p + 4, n); swName[n] = '\0'; scrollOffsetName = 0; hasDiscoveryData = true; }
-        if (type == 0x0003) { int n = min(dataLen, 62); memcpy(swPort, d + p + 4, n); swPort[n] = '\0'; scrollOffsetPort = 0; }
+        if (type == 0x0001) { int n = min(dataLen, 62); memcpy(swName, d + p + 4, n); swName[n] = '\0'; hasDiscoveryData = true; }
+        if (type == 0x0003) { int n = min(dataLen, 62); memcpy(swPort, d + p + 4, n); swPort[n] = '\0'; }
         if (type == 0x000A && dataLen >= 2) { // Native VLAN
             uint16_t vlanId = (d[p+4] << 8) | d[p+5];
             snprintf(swVlan, sizeof(swVlan), "%u", vlanId);
