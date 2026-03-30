@@ -62,8 +62,35 @@ const unsigned long PAGE_IP_DISPLAY_TIME = 10000;  // 第二頁顯示 10 秒
 const unsigned long MARQUEE_PAUSE_TIME = 2000;     // 跑馬燈完成後暫停 2 秒
 const unsigned long NO_DATA_SWITCH_TIME = 10000;   // 無資料時 10 秒切換
 
-// --- DHCP ---
-bool dhcpObtained = false;
+// --- DHCP (背景執行緒) ---
+volatile bool dhcpObtained = false;
+volatile bool dhcpTaskRunning = false;
+volatile bool dhcpTaskDone = false;
+
+// DHCP 在 Core 0 背景執行，不影響 UI
+void dhcpTask(void* param) {
+    Serial.println("[DHCP] Background task started on Core 0");
+    dhcpTaskRunning = true;
+
+    // 關閉 MACRAW socket 以便 DHCP 使用
+    w5500.execCmdSn(0, Sock_CLOSE);
+    w5500.writeSnIR(0, 0xFF);
+
+    if (Ethernet.begin(mac) != 0) {
+        dhcpObtained = true;
+        Serial.print("[DHCP] OK  IP: ");
+        Serial.println(Ethernet.localIP());
+        Serial.print("[DHCP] GW: ");
+        Serial.println(Ethernet.gatewayIP());
+    } else {
+        Serial.println("[DHCP] Failed, no IP");
+    }
+
+    dhcpTaskDone = true;
+    dhcpTaskRunning = false;
+    Serial.println("[DHCP] Background task finished");
+    vTaskDelete(NULL); // 任務結束自刪
+}
 
 // --- 輔助函式：顯示 QR Code (右對齊，避免與標題重疊) ---
 void drawQRCode(const char* url) {
@@ -150,30 +177,10 @@ void setup() {
     Ethernet.begin(mac, ip);
     Serial.println("[ETH] W5500 initialized (MAC set)");
 
-    // 嘗試 DHCP (在 setup 中執行，阻塞無妨)
-    Serial.println("[DHCP] Attempting...");
-    u8g2.clearBuffer();
-    u8g2.drawStr(0, 12, "DHCP requesting...");
-    u8g2.sendBuffer();
-    // 重新初始化以啟動 DHCP
-    if (Ethernet.begin(mac) != 0) {
-        dhcpObtained = true;
-        Serial.print("[DHCP] OK  IP: ");
-        Serial.println(Ethernet.localIP());
-    } else {
-        Serial.println("[DHCP] Failed, continuing without IP");
-    }
-
-    // 立即開啟 Socket 0 MACRAW 模式，L2 偵測不需要 IP
-    Serial.println("[ETH] Opening MACRAW socket...");
-    w5500.execCmdSn(0, Sock_CLOSE);
-    w5500.writeSnIR(0, 0xFF);
-    w5500.writeSnMR(0, SnMR::MACRAW);
-    w5500.execCmdSn(0, Sock_OPEN);
-    uint8_t sr = w5500.readSnSR(0);
-    Serial.print("[ETH] Socket 0 status: 0x");
-    Serial.println(sr, HEX);
-    Serial.println(sr == SnSR::MACRAW ? "[ETH] MACRAW OK" : "[ETH] MACRAW FAILED");
+    // 在 Core 0 背景執行 DHCP，不阻塞 UI
+    // DHCP 完成後會在 loop() 中重新開啟 MACRAW socket
+    xTaskCreatePinnedToCore(dhcpTask, "DHCP", 4096, NULL, 1, NULL, 0);
+    Serial.println("[DHCP] Background task launched");
 
     // BLE 初始化
     Serial.println("[BLE] Init...");
@@ -235,12 +242,19 @@ void loop() {
         }
     }
 
-    // 2. DHCP 維護 (非阻塞)
-    if (dhcpObtained) {
-        Ethernet.maintain();
+    // 2. DHCP 背景任務完成後重新開啟 MACRAW
+    if (dhcpTaskDone) {
+        dhcpTaskDone = false;
+        // DHCP task 已結束，重新開啟 MACRAW socket
+        w5500.execCmdSn(0, Sock_CLOSE);
+        w5500.writeSnIR(0, 0xFF);
+        w5500.writeSnMR(0, SnMR::MACRAW);
+        w5500.execCmdSn(0, Sock_OPEN);
+        Serial.println("[ETH] MACRAW socket reopened after DHCP");
     }
 
-    // 3. 處理網路封包 (MACRAW 被動偵測)
+    // 3. 處理網路封包 (MACRAW 被動偵測，DHCP 期間跳過避免 SPI 衝突)
+    if (!dhcpTaskRunning) {
     uint16_t rxSize = w5500.getRXReceivedSize(0);
     if (rxSize > 2) {
         uint8_t buffer[600];
@@ -281,6 +295,7 @@ void loop() {
             }
         }
     }
+    } // end if (!dhcpTaskRunning)
 
     // 4. UI 渲染
     drawUI();
