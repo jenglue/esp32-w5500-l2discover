@@ -24,6 +24,7 @@
 // --- 前向宣告 ---
 void updateBLE();
 void drawUI();
+void drawMarquee(int x, int y, int maxWidth, const char* text, int &scrollOffset);
 void parseLLDP(uint8_t* d, int l);
 void parseCDP(uint8_t* d, int l);
 
@@ -33,26 +34,43 @@ BLECharacteristic *pCharacteristic;
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0x0F };
 
 // --- 狀態變數 ---
-char swName[32] = "Searching...";
-char swPort[32] = "Waiting LLDP/CDP...";
+char swName[64] = "Searching...";
+char swPort[64] = "Waiting LLDP/CDP...";
+char swVlan[16] = "N/A";
 int currentPage = 0; // 0:L2, 1:IP, 2:Traffic, 3:QR
 uint32_t packetCount = 0;
 String dashboardURL = "https://your-url-here.io"; // 稍後替換為你的網址
+
+// --- 跑馬燈狀態 ---
+int scrollOffsetName = 0;
+int scrollOffsetPort = 0;
+unsigned long lastScrollTime = 0;
+const unsigned long SCROLL_INTERVAL = 200; // 每 200ms 移動
+const int CHAR_WIDTH = 6; // u8g2_font_6x12_tf 字元寬度
+const int DISPLAY_TEXT_WIDTH = 98; // 可顯示寬度 (扣除左側標籤和右側頁碼)
+
+// --- 自動換頁狀態 ---
+unsigned long lastUserAction = 0;
+unsigned long lastAutoSwitch = 0;
+const unsigned long AUTO_SWITCH_INTERVAL = 10000; // 10 秒自動換頁
+bool autoSwitchActive = true;
 
 // --- DHCP 背景處理 ---
 bool dhcpObtained = false;
 unsigned long dhcpLastAttempt = 0;
 const unsigned long DHCP_RETRY_INTERVAL = 5000; // 5 秒重試
 
-// --- 輔助函式：顯示 QR Code ---
+// --- 輔助函式：顯示 QR Code (右對齊，避免與標題重疊) ---
 void drawQRCode(const char* url) {
     QRCode qrcode;
     uint8_t qrcodeData[qrcode_getBufferSize(3)];
     qrcode_initText(&qrcode, qrcodeData, 3, 0, url);
 
     int scale = 2; // 放大兩倍方便掃描
-    int offset_x = (128 - qrcode.size * scale) / 2;
-    int offset_y = (64 - qrcode.size * scale) / 2;
+    int qrWidth = qrcode.size * scale;
+    int qrHeight = qrcode.size * scale;
+    int offset_x = 128 - qrWidth; // 靠右對齊
+    int offset_y = (64 - qrHeight) / 2; // 垂直置中
 
     for (uint8_t y = 0; y < qrcode.size; y++) {
         for (uint8_t x = 0; x < qrcode.size; x++) {
@@ -151,7 +169,20 @@ void loop() {
     // 1. 按鈕換頁
     if (digitalRead(BTN_PIN) == LOW) {
         currentPage = (currentPage + 1) % 4;
+        lastUserAction = millis();
+        autoSwitchActive = false;
         delay(250); 
+    }
+
+    // 自動換頁：無操作時每 10 秒在第 1 頁與第 2 頁間切換
+    if (!autoSwitchActive && millis() - lastUserAction > AUTO_SWITCH_INTERVAL) {
+        autoSwitchActive = true;
+        currentPage = 0;
+        lastAutoSwitch = millis();
+    }
+    if (autoSwitchActive && millis() - lastAutoSwitch > AUTO_SWITCH_INTERVAL) {
+        lastAutoSwitch = millis();
+        currentPage = (currentPage == 0) ? 1 : 0;
     }
 
     // 2. 背景 DHCP 處理
@@ -232,7 +263,38 @@ void updateBLE() {
     pCharacteristic->notify();
 }
 
+// --- 跑馬燈繪製輔助函式 ---
+void drawMarquee(int x, int y, int maxWidth, const char* text, int &scrollOffset) {
+    int textWidth = strlen(text) * CHAR_WIDTH;
+    if (textWidth <= maxWidth) {
+        // 文字夠短，直接顯示
+        u8g2.setCursor(x, y);
+        u8g2.print(text);
+        scrollOffset = 0;
+    } else {
+        // 文字太長，做跑馬燈效果
+        // 在末尾加上間隔後循環
+        int totalWidth = textWidth + maxWidth; // 完整循環寬度
+        int offset = scrollOffset % totalWidth;
+        // 使用 clip window 限制繪製範圍
+        u8g2.setClipWindow(x, y - 12, x + maxWidth, y + 2);
+        u8g2.setCursor(x - offset, y);
+        u8g2.print(text);
+        // 在原文後面加間隔重複繪製，實現無縫循環
+        u8g2.setCursor(x - offset + textWidth + CHAR_WIDTH * 3, y);
+        u8g2.print(text);
+        u8g2.setMaxClipWindow(); // 恢復全螢幕繪製
+    }
+}
+
 void drawUI() {
+    // 更新跑馬燈偏移
+    if (millis() - lastScrollTime > SCROLL_INTERVAL) {
+        lastScrollTime = millis();
+        scrollOffsetName += 2; // 每次移動 2 像素
+        scrollOffsetPort += 2;
+    }
+
     u8g2.clearBuffer();
     u8g2.setFont(u8g2_font_6x12_tf);
     
@@ -245,8 +307,13 @@ void drawUI() {
     if (currentPage == 0) { // L2 Topology
         u8g2.drawStr(0, 10, "1. TOPOLOGY");
         u8g2.drawHLine(0, 13, 118);
-        u8g2.drawStr(0, 28, "SW:"); u8g2.setCursor(20, 40); u8g2.print(swName);
-        u8g2.drawStr(0, 52, "PT:"); u8g2.setCursor(20, 64); u8g2.print(swPort);
+        u8g2.drawStr(0, 26, "SW:");
+        drawMarquee(20, 26, DISPLAY_TEXT_WIDTH, swName, scrollOffsetName);
+        u8g2.setFont(u8g2_font_6x12_tf);
+        u8g2.drawStr(0, 40, "PT:");
+        drawMarquee(20, 40, DISPLAY_TEXT_WIDTH, swPort, scrollOffsetPort);
+        u8g2.setFont(u8g2_font_6x12_tf);
+        u8g2.setCursor(0, 54); u8g2.print("VL: "); u8g2.print(swVlan);
     } 
     else if (currentPage == 1) { // IP Info
         u8g2.drawStr(0, 10, "2. IP STATUS");
@@ -270,7 +337,7 @@ void drawUI() {
     }
     else if (currentPage == 3) { // QR Code
         u8g2.setFont(u8g2_font_5x7_tf);
-        u8g2.drawStr(0, 8, "WEB DASHBOARD");
+        u8g2.drawStr(0, 8, "DASHBOARD");
         drawQRCode(dashboardURL.c_str());
     }
 
@@ -283,8 +350,16 @@ void parseLLDP(uint8_t* d, int l) {
     while (p < l - 2) {
         uint16_t tlv = (d[p] << 8) | d[p+1];
         int type = tlv >> 9; int len = tlv & 0x01FF;
-        if (type == 5) { memcpy(swName, d + p + 2, min(len, 30)); swName[min(len, 30)] = '\0'; }
-        if (type == 7) { memcpy(swPort, d + p + 2, min(len, 30)); swPort[min(len, 30)] = '\0'; }
+        if (type == 5) { int n = min(len, 62); memcpy(swName, d + p + 2, n); swName[n] = '\0'; scrollOffsetName = 0; }
+        if (type == 7) { int n = min(len, 62); memcpy(swPort, d + p + 2, n); swPort[n] = '\0'; scrollOffsetPort = 0; }
+        // IEEE 802.1 Organizationally Specific TLV: Port VLAN ID
+        if (type == 127 && len >= 7) {
+            // OUI: 00:80:C2, Subtype: 1 = Port VLAN ID
+            if (d[p+2] == 0x00 && d[p+3] == 0x80 && d[p+4] == 0xC2 && d[p+5] == 0x01) {
+                uint16_t vlanId = (d[p+6] << 8) | d[p+7];
+                snprintf(swVlan, sizeof(swVlan), "%u", vlanId);
+            }
+        }
         p += (len + 2);
     }
 }
@@ -292,8 +367,14 @@ void parseCDP(uint8_t* d, int l) {
     int p = 22;
     while (p < l - 4) {
         uint16_t type = (d[p] << 8) | d[p+1]; uint16_t len = (d[p+2] << 8) | d[p+3];
-        if (type == 0x0001) { memcpy(swName, d + p + 4, min(len-4, 30)); swName[min(len-4, 30)] = '\0'; }
-        if (type == 0x0003) { memcpy(swPort, d + p + 4, min(len-4, 30)); swPort[min(len-4, 30)] = '\0'; }
+        if (len < 4) break; // 防止無限迴圈
+        int dataLen = len - 4;
+        if (type == 0x0001) { int n = min(dataLen, 62); memcpy(swName, d + p + 4, n); swName[n] = '\0'; scrollOffsetName = 0; }
+        if (type == 0x0003) { int n = min(dataLen, 62); memcpy(swPort, d + p + 4, n); swPort[n] = '\0'; scrollOffsetPort = 0; }
+        if (type == 0x000A && dataLen >= 2) { // Native VLAN
+            uint16_t vlanId = (d[p+4] << 8) | d[p+5];
+            snprintf(swVlan, sizeof(swVlan), "%u", vlanId);
+        }
         p += len;
     }
 }
