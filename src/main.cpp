@@ -50,7 +50,10 @@ const unsigned long SCROLL_INTERVAL = 80; // 每 80ms 移動 (快速跑馬燈)
 const int CHAR_WIDTH = 6; // u8g2_font_6x12_tf 字元寬度
 const int DISPLAY_TEXT_WIDTH = 98; // 可顯示寬度 (扣除左側標籤和右側頁碼)
 
-// --- 自動換頁狀態 ---
+// --- 按鈕消抖狀態 ---
+bool lastBtnState = HIGH;
+unsigned long lastBtnChangeTime = 0;
+const unsigned long BTN_DEBOUNCE_MS = 200;
 unsigned long pageEnteredTime = 0;
 bool hasDiscoveryData = false;
 bool marqueeFirstCycleDone = false;
@@ -59,10 +62,8 @@ const unsigned long PAGE_IP_DISPLAY_TIME = 10000;  // 第二頁顯示 10 秒
 const unsigned long MARQUEE_PAUSE_TIME = 2000;     // 跑馬燈完成後暫停 2 秒
 const unsigned long NO_DATA_SWITCH_TIME = 10000;   // 無資料時 10 秒切換
 
-// --- DHCP 背景處理 ---
+// --- DHCP ---
 bool dhcpObtained = false;
-unsigned long dhcpLastAttempt = 0;
-const unsigned long DHCP_RETRY_INTERVAL = 5000; // 5 秒重試
 
 // --- 輔助函式：顯示 QR Code (右對齊，避免與標題重疊) ---
 void drawQRCode(const char* url) {
@@ -147,7 +148,21 @@ void setup() {
     // 以靜態 IP 0.0.0.0 初始化，僅寫入 MAC 地址到 W5500
     IPAddress ip(0, 0, 0, 0);
     Ethernet.begin(mac, ip);
-    Serial.println("[ETH] W5500 initialized (MAC only, DHCP deferred)");
+    Serial.println("[ETH] W5500 initialized (MAC set)");
+
+    // 嘗試 DHCP (在 setup 中執行，阻塞無妨)
+    Serial.println("[DHCP] Attempting...");
+    u8g2.clearBuffer();
+    u8g2.drawStr(0, 12, "DHCP requesting...");
+    u8g2.sendBuffer();
+    // 重新初始化以啟動 DHCP
+    if (Ethernet.begin(mac) != 0) {
+        dhcpObtained = true;
+        Serial.print("[DHCP] OK  IP: ");
+        Serial.println(Ethernet.localIP());
+    } else {
+        Serial.println("[DHCP] Failed, continuing without IP");
+    }
 
     // 立即開啟 Socket 0 MACRAW 模式，L2 偵測不需要 IP
     Serial.println("[ETH] Opening MACRAW socket...");
@@ -172,14 +187,19 @@ void setup() {
 }
 
 void loop() {
-    // 1. 按鈕換頁
-    if (digitalRead(BTN_PIN) == LOW) {
+    // 1. 按鈕換頁 (非阻塞消抖)
+    bool btnState = digitalRead(BTN_PIN);
+    if (btnState == LOW && lastBtnState == HIGH &&
+        millis() - lastBtnChangeTime > BTN_DEBOUNCE_MS) {
         currentPage = (currentPage + 1) % 4;
         pageEnteredTime = millis();
         marqueeFirstCycleDone = false;
         scrollOffsetName = 0;
         scrollOffsetPort = 0;
-        delay(250); 
+    }
+    if (btnState != lastBtnState) {
+        lastBtnChangeTime = millis();
+        lastBtnState = btnState;
     }
 
     // 自動換頁：第一頁至少 10 秒，跑馬燈完成後再停 2 秒；第二頁 10 秒回第一頁
@@ -215,30 +235,9 @@ void loop() {
         }
     }
 
-    // 2. 背景 DHCP 處理
-    if (!dhcpObtained && millis() - dhcpLastAttempt > DHCP_RETRY_INTERVAL) {
-        dhcpLastAttempt = millis();
-        Serial.println("[DHCP] Attempting...");
-
-        // 暫時關閉 MACRAW socket 以進行 DHCP
-        w5500.execCmdSn(0, Sock_CLOSE);
-        w5500.writeSnIR(0, 0xFF);
-
-        if (Ethernet.begin(mac) != 0) {
-            dhcpObtained = true;
-            Serial.print("[DHCP] OK  IP: ");
-            Serial.println(Ethernet.localIP());
-            Serial.print("[DHCP] GW: ");
-            Serial.println(Ethernet.gatewayIP());
-        } else {
-            Serial.println("[DHCP] Failed, will retry...");
-        }
-
-        // 重新開啟 MACRAW socket
-        w5500.execCmdSn(0, Sock_CLOSE);
-        w5500.writeSnIR(0, 0xFF);
-        w5500.writeSnMR(0, SnMR::MACRAW);
-        w5500.execCmdSn(0, Sock_OPEN);
+    // 2. DHCP 維護 (非阻塞)
+    if (dhcpObtained) {
+        Ethernet.maintain();
     }
 
     // 3. 處理網路封包 (MACRAW 被動偵測)
