@@ -402,10 +402,14 @@ void parseLLDP(uint8_t* d, int l) {
     while (p < l - 2) {
         uint16_t tlv = (d[p] << 8) | d[p+1];
         int type = tlv >> 9; int len = tlv & 0x01FF;
+        if (type == 0) break; // End of LLDPDU
         if (type == 5) { int n = min(len, 62); memcpy(swName, d + p + 2, n); swName[n] = '\0'; hasDiscoveryData = true; }
-        if (type == 7) { int n = min(len, 62); memcpy(swPort, d + p + 2, n); swPort[n] = '\0'; }
+        // Port ID (Type 2): subtype byte + port string
+        if (type == 2 && len > 1) { int n = min(len - 1, 62); memcpy(swPort, d + p + 3, n); swPort[n] = '\0'; }
+        // Port Description (Type 4): full port name, overwrites Port ID
+        if (type == 4 && len > 0) { int n = min(len, 62); memcpy(swPort, d + p + 2, n); swPort[n] = '\0'; }
         // IEEE 802.1 Organizationally Specific TLV: Port VLAN ID
-        if (type == 127 && len >= 7) {
+        if (type == 127 && len >= 6) {
             // OUI: 00:80:C2, Subtype: 1 = Port VLAN ID
             if (d[p+2] == 0x00 && d[p+3] == 0x80 && d[p+4] == 0xC2 && d[p+5] == 0x01) {
                 uint16_t vlanId = (d[p+6] << 8) | d[p+7];
@@ -416,7 +420,8 @@ void parseLLDP(uint8_t* d, int l) {
     }
 }
 void parseCDP(uint8_t* d, int l) {
-    int p = 22;
+    // Skip: dst MAC(6) + src MAC(6) + length(2) + LLC/SNAP(8) + CDP header(4) = 26
+    int p = 26;
     while (p < l - 4) {
         uint16_t type = (d[p] << 8) | d[p+1]; uint16_t len = (d[p+2] << 8) | d[p+3];
         if (len < 4) break; // 防止無限迴圈
