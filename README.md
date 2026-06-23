@@ -25,7 +25,7 @@ Passive Layer-2 discovery firmware for an ESP32 + W5500 device. The project list
 
 ## Repository layout
 
-- `src/main.cpp` - firmware entry point
+- `src/main.cpp` - firmware entry point; current BLE, OLED, DHCP, packet parsing, and UI logic all live here
 - `src/webbt.html` - Web Bluetooth viewer
 - `platformio.ini` - PlatformIO environment and library dependencies
 
@@ -87,6 +87,6 @@ Then browse to `http://localhost:8000/src/webbt.html`.
 
 ## Current limitations
 
-- The dashboard QR target is still a placeholder URL in firmware.
+- The dashboard QR target is still a placeholder URL in `src/main.cpp` (`dashboardURL`) and should be replaced with the final hosted dashboard URL.
 - Discovery depends on nearby network equipment sending LLDP or CDP frames.
 - The project currently reports the latest observed device/port only.
