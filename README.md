@@ -73,7 +73,15 @@ The boot button cycles through four pages:
 
 ## Web Bluetooth dashboard
 
-Open `src/webbt.html` in a Web Bluetooth-capable browser, then connect to the BLE device named `T-Lite-Sniffer`. The page subscribes to notifications and shows the latest switch hostname and port identifier.
+Serve `src/webbt.html` from a local web server, then open it in a Web Bluetooth-capable browser and connect to the BLE device named `T-Lite-Sniffer`.
+
+Example:
+
+```bash
+python3 -m http.server
+```
+
+Then browse to `http://localhost:8000/src/webbt.html`.
 
 > Note: Web Bluetooth usually requires HTTPS or `localhost`, and works best in Chromium-based browsers.
 
