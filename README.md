@@ -1,4 +1,4 @@
-# ESP32 W5500 L2 Discover
+# ESP32 W5500 Layer-2 Network Discovery
 
 Passive Layer-2 discovery firmware for an ESP32 + W5500 device. The project listens for LLDP and CDP frames, shows switch/port details on a small OLED, and exposes the latest discovery result over BLE for a simple Web Bluetooth dashboard.
 
@@ -73,7 +73,7 @@ The boot button cycles through four pages:
 
 ## Web Bluetooth dashboard
 
-Serve `src/webbt.html` from a local web server, then open it in a Web Bluetooth-capable browser and connect to the BLE device named `T-Lite-Sniffer`.
+Serve `src/webbt.html` from a local web server on `localhost`, then open it in a Web Bluetooth-capable browser and connect to the BLE device named `T-Lite-Sniffer`.
 
 Example:
 
