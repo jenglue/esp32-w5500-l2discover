@@ -1,6 +1,8 @@
 # ESP32 W5500 Layer-2 Network Discovery
 
-Passive Layer-2 discovery firmware for an ESP32 + W5500 device. The project listens for LLDP and CDP frames, shows switch/port details on a small OLED, and exposes the latest discovery result over BLE for a simple Web Bluetooth dashboard.
+這個專案旨在讓搭載 W5500 乙太網路模組的 ESP32 開發板能夠進行簡易的網路檢測。透過 W5500 的 MACRAW 模式被動監聽 Layer-2 網路封包，自動識別周遭網路設備（交換器/路由器）所廣播的 LLDP 與 CDP 訊框，進而取得交換器名稱、連接埠及 VLAN 等拓樸資訊。
+
+This project enables an ESP32 paired with a W5500 Ethernet controller to perform simple network detection. It passively captures Layer-2 Ethernet frames via W5500 MACRAW mode, parses LLDP and CDP packets, and displays switch/port topology information on an onboard OLED. Discovery results are also exposed over BLE for a lightweight Web Bluetooth dashboard.
 
 ## Features
 
@@ -90,3 +92,7 @@ Then browse to `http://localhost:8000/src/webbt.html`.
 - The dashboard QR target is still a placeholder URL in `src/main.cpp` (`dashboardURL`) and should be replaced with the final hosted dashboard URL.
 - Discovery depends on nearby network equipment sending LLDP or CDP frames.
 - The project currently reports the latest observed device/port only.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
