@@ -1,5 +1,17 @@
 # ESP32 W5500 Layer-2 Network Discovery
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-ESP32-E7352C.svg?logo=espressif)](https://www.espressif.com/)
+[![Framework](https://img.shields.io/badge/Framework-Arduino-00979D.svg?logo=arduino)](https://www.arduino.cc/)
+[![PlatformIO](https://img.shields.io/badge/Build-PlatformIO-FF7F00.svg?logo=platformio)](https://platformio.org/)
+[![Language](https://img.shields.io/badge/Language-C%2B%2B-00599C.svg?logo=cplusplus)](https://isocpp.org/)
+[![Ethernet](https://img.shields.io/badge/Ethernet-W5500-4CAF50.svg)](https://www.wiznet.io/product-item/w5500/)
+[![BLE](https://img.shields.io/badge/BLE-NimBLE--Arduino-6A0DAD.svg?logo=bluetooth)](https://github.com/h2zero/NimBLE-Arduino)
+[![Protocol](https://img.shields.io/badge/Protocol-LLDP%20%7C%20CDP-1E88E5.svg)](https://en.wikipedia.org/wiki/Link_Layer_Discovery_Protocol)
+[![Display](https://img.shields.io/badge/Display-SSD1306%20OLED-607D8B.svg)](https://github.com/olikraus/u8g2)
+[![Last Commit](https://img.shields.io/github/last-commit/jenglue/esp32-w5500-l2discover.svg)](https://github.com/jenglue/esp32-w5500-l2discover/commits)
+[![Repo Size](https://img.shields.io/github/repo-size/jenglue/esp32-w5500-l2discover.svg)](https://github.com/jenglue/esp32-w5500-l2discover)
+
 這個專案旨在讓搭載 W5500 乙太網路模組的 ESP32 開發板能夠進行簡易的網路檢測。透過 W5500 的 MACRAW 模式被動監聽 Layer-2 網路封包，自動識別周遭網路設備（交換器/路由器）所廣播的 LLDP 與 CDP 訊框，進而取得交換器名稱、連接埠及 VLAN 等拓樸資訊。
 
 This project enables an ESP32 paired with a W5500 Ethernet controller to perform simple network detection. It passively captures Layer-2 Ethernet frames via W5500 MACRAW mode, parses LLDP and CDP packets, and displays switch/port topology information on an onboard OLED. Discovery results are also exposed over BLE for a lightweight Web Bluetooth dashboard.
