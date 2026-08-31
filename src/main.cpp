@@ -4,6 +4,7 @@
 #include <utility/w5500.h>
 #include <qrcode.h>
 #include <BLEDevice.h>
+#include <BLE2902.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
 
@@ -40,7 +41,7 @@ char swPort[64] = "Waiting LLDP/CDP...";
 char swVlan[16] = "N/A";
 int currentPage = 0; // 0:L2, 1:IP, 2:Traffic, 3:QR
 uint32_t packetCount = 0;
-String dashboardURL = "https://your-url-here.io"; // 稍後替換為你的網址
+String dashboardURL = "https://jenglue.github.io/esp32-w5500-l2discover/";
 
 // --- 跑馬燈狀態 ---
 int scrollOffsetName = 0;
@@ -122,6 +123,7 @@ void initBLE() {
                         CHARACTERISTIC_UUID,
                         BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
                       );
+        pCharacteristic->addDescriptor(new BLE2902());
     pService->start();
     BLEDevice::getAdvertising()->start();
 }

@@ -61,6 +61,14 @@
         const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
         const CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 
+        function updateDiscoveryData(value) {
+            const decoder = new TextDecoder('utf-8');
+            const parts = decoder.decode(value).split('|');
+
+            document.getElementById('swName').innerText = parts[0] || "Unknown";
+            document.getElementById('swPort').innerText = parts[1] || "Unknown";
+        }
+
         async function connectBLE() {
             const statusEl = document.getElementById('status');
             try {
@@ -77,20 +85,15 @@
                 const service = await server.getPrimaryService(SERVICE_UUID);
                 
                 const characteristic = await service.getCharacteristic(CHAR_UUID);
-                
+
+                characteristic.addEventListener('characteristicvaluechanged', (event) => {
+                    updateDiscoveryData(event.target.value);
+                });
+                await characteristic.startNotifications();
+                updateDiscoveryData(await characteristic.readValue());
+
                 statusEl.innerText = "連線成功！監聽數據中...";
                 statusEl.style.color = "#00ff00";
-
-                // 監聽數據變化
-                characteristic.startNotifications();
-                characteristic.addEventListener('characteristicvaluechanged', (event) => {
-                    const decoder = new TextDecoder('utf-8');
-                    const value = decoder.decode(event.target.value);
-                    const parts = value.split('|');
-                    
-                    document.getElementById('swName').innerText = parts[0] || "Unknown";
-                    document.getElementById('swPort').innerText = parts[1] || "Unknown";
-                });
 
             } catch (error) {
                 console.error(error);
