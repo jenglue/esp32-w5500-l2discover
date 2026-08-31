@@ -35,6 +35,13 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE, OLED_SCL, OLED_
 BLECharacteristic *pCharacteristic;
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0x0F };
 
+class BLEConnectionCallbacks : public BLEServerCallbacks {
+    void onDisconnect(BLEServer* pServer) override {
+        BLEDevice::getAdvertising()->start();
+        Serial.println("[BLE] Client disconnected; advertising restarted");
+    }
+};
+
 // --- 狀態變數 ---
 char swName[64] = "Searching...";
 char swPort[64] = "Waiting LLDP/CDP...";
@@ -118,6 +125,7 @@ void drawQRCode(const char* url) {
 void initBLE() {
     BLEDevice::init("T-Lite-Sniffer");
     BLEServer *pServer = BLEDevice::createServer();
+    pServer->setCallbacks(new BLEConnectionCallbacks());
     BLEService *pService = pServer->createService(SERVICE_UUID);
     pCharacteristic = pService->createCharacteristic(
                         CHARACTERISTIC_UUID,

@@ -60,6 +60,13 @@
     <script>
         const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
         const CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+        let connectedDevice;
+
+        function handleDisconnect() {
+            const statusEl = document.getElementById('status');
+            statusEl.innerText = "藍牙已斷線";
+            statusEl.style.color = "#ffcc00";
+        }
 
         function updateDiscoveryData(value) {
             const decoder = new TextDecoder('utf-8');
@@ -77,6 +84,8 @@
                     filters: [{ name: 'T-Lite-Sniffer' }],
                     optionalServices: [SERVICE_UUID]
                 });
+                connectedDevice = device;
+                device.addEventListener('gattserverdisconnected', handleDisconnect);
 
                 statusEl.innerText = "正在連線伺服器...";
                 const server = await device.gatt.connect();
@@ -101,6 +110,12 @@
                 statusEl.style.color = "#ff0000";
             }
         }
+
+        window.addEventListener('beforeunload', () => {
+            if (connectedDevice?.gatt.connected) {
+                connectedDevice.gatt.disconnect();
+            }
+        });
     </script>
 </body>
 </html>
