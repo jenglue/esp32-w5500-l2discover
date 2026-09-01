@@ -9,7 +9,7 @@ This project enables an ESP32 paired with a W5500 Ethernet controller to perform
 - Passive LLDP and CDP discovery using W5500 MACRAW mode
 - OLED status UI with topology, IP status, traffic, and QR-code pages
 - BLE advertisement as `T-Lite-Sniffer`
-- BLE characteristic payload format: `SwitchName|PortID`
+- BLE characteristic payload format: `SwitchName|PortID|VLAN|IP|Gateway`
 - Background DHCP task so the UI stays responsive
 - Simple browser dashboard in `src/webbt.html`
 
@@ -62,7 +62,7 @@ This project enables an ESP32 paired with a W5500 Ethernet controller to perform
    - CDP (`01:00:0C`)
 4. When discovery data is found, the device updates:
    - OLED switch name, port, and VLAN display
-   - BLE characteristic value for external clients
+   - BLE characteristic value for external clients (`SwitchName|PortID|VLAN|IP|Gateway`)
 
 ## OLED pages
 

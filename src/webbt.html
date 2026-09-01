@@ -48,8 +48,20 @@
             <div id="swName" class="value">OFFLINE</div>
         </div>
         <div class="data-field">
-            <div class="label">Port Identifier</div>
+            <div class="label">Interface Name</div>
             <div id="swPort" class="value">---</div>
+        </div>
+        <div class="data-field">
+            <div class="label">VLAN</div>
+            <div id="swVlan" class="value">N/A</div>
+        </div>
+        <div class="data-field">
+            <div class="label">IP Address</div>
+            <div id="ipAddress" class="value">---</div>
+        </div>
+        <div class="data-field">
+            <div class="label">Gateway</div>
+            <div id="gateway" class="value">---</div>
         </div>
         <div style="text-align: center;">
             <button onclick="connectBLE()">Connect Sensor</button>
@@ -60,6 +72,7 @@
     <script>
         const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
         const CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+        const decoder = new TextDecoder('utf-8');
         let connectedDevice;
 
         function handleDisconnect() {
@@ -69,11 +82,13 @@
         }
 
         function updateDiscoveryData(value) {
-            const decoder = new TextDecoder('utf-8');
             const parts = decoder.decode(value).split('|');
 
             document.getElementById('swName').innerText = parts[0] || "Unknown";
             document.getElementById('swPort').innerText = parts[1] || "Unknown";
+            document.getElementById('swVlan').innerText = parts[2] || "N/A";
+            document.getElementById('ipAddress').innerText = parts[3] || "Unknown";
+            document.getElementById('gateway').innerText = parts[4] || "Unknown";
         }
 
         async function connectBLE() {

@@ -69,6 +69,9 @@ unsigned long marqueePauseStart = 0;
 const unsigned long PAGE_IP_DISPLAY_TIME = 10000;  // 第二頁顯示 10 秒
 const unsigned long MARQUEE_PAUSE_TIME = 2000;     // 跑馬燈完成後暫停 2 秒
 const unsigned long NO_DATA_SWITCH_TIME = 10000;   // 無資料時 10 秒切換
+const unsigned long BLE_UPDATE_INTERVAL = 200;     // 每 200ms 檢查一次狀態變化
+unsigned long lastBLEUpdateTime = 0;
+String lastBLEData;
 
 // --- DHCP (背景執行緒) ---
 volatile bool dhcpObtained = false;
@@ -261,6 +264,12 @@ void loop() {
         w5500.writeSnMR(0, SnMR::MACRAW);
         w5500.execCmdSn(0, Sock_OPEN);
         Serial.println("[ETH] MACRAW socket reopened after DHCP");
+        updateBLE();
+    }
+
+    // 定期同步 DHCP 等非封包觸發的狀態；資料未變化時不重複發送通知
+    if (millis() - lastBLEUpdateTime >= BLE_UPDATE_INTERVAL) {
+        updateBLE();
     }
 
     // 3. 處理網路封包 (MACRAW 被動偵測，DHCP 期間跳過避免 SPI 衝突)
@@ -312,9 +321,20 @@ void loop() {
 }
 
 void updateBLE() {
-    String data = String(swName) + "|" + String(swPort);
+    if (pCharacteristic == nullptr) return;
+
+    String data = String(swName) + "|" + String(swPort) + "|" +
+                  String(swVlan) + "|" + Ethernet.localIP().toString() + "|" +
+                  Ethernet.gatewayIP().toString();
+    if (data == lastBLEData) {
+        lastBLEUpdateTime = millis();
+        return;
+    }
+
     pCharacteristic->setValue(data.c_str());
     pCharacteristic->notify();
+    lastBLEData = data;
+    lastBLEUpdateTime = millis();
 }
 
 // --- 跑馬燈判斷是否完成一輪 ---
