@@ -6,36 +6,56 @@
     <title>T-Lite Pro | 網路分析儀</title>
     <style>
         :root { --neon-blue: #00f2ff; --neon-purple: #bc13fe; }
+        * { box-sizing: border-box; }
         body { 
             background-color: #050505; 
             color: white; 
             font-family: 'Segoe UI', 'Courier New', monospace; 
             display: flex; flex-direction: column; align-items: center;
-            justify-content: center; min-height: 100vh; margin: 0;
+            justify-content: center; min-height: 100dvh; margin: 0; padding: 12px;
+            overflow: hidden;
         }
         h1 { 
-            text-transform: uppercase; letter-spacing: 5px;
+            text-transform: uppercase; letter-spacing: 5px; font-size: 1.6rem;
             text-shadow: 0 0 10px var(--neon-blue);
-            color: var(--neon-blue);
+            color: var(--neon-blue); margin: 0 0 12px;
         }
         .container {
             background: rgba(255, 255, 255, 0.05);
-            border: 1px solid var(--neon-blue);
-            border-radius: 15px; padding: 30px;
+            border: 1px solid var(--neon-blue); border-radius: 15px; padding: 16px;
             box-shadow: 0 0 20px rgba(0, 242, 255, 0.2);
-            width: 90%; max-width: 400px;
+            width: min(90vw, 440px); max-height: calc(100dvh - 72px);
         }
-        .data-field { margin-bottom: 25px; border-bottom: 1px solid #333; padding-bottom: 10px; }
-        .label { font-size: 0.8rem; color: #888; text-transform: uppercase; }
-        .value { font-size: 1.5rem; font-weight: bold; color: var(--neon-purple); text-shadow: 0 0 5px var(--neon-purple); }
+        .data-field {
+            display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+            border-bottom: 1px solid #333; padding: 7px 0;
+        }
+        .label { font-size: 0.75rem; color: #888; text-transform: uppercase; }
+        .value {
+            min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            font-size: 1.15rem; font-weight: bold; color: var(--neon-purple);
+            text-shadow: 0 0 5px var(--neon-purple); text-align: right;
+        }
+        .container > .data-field:last-of-type { margin-bottom: 12px; }
         button {
             background: transparent; border: 2px solid var(--neon-blue);
-            color: var(--neon-blue); padding: 12px 24px; font-size: 1rem;
+            color: var(--neon-blue); padding: 9px 18px; font-size: 0.9rem;
             cursor: pointer; border-radius: 50px; transition: 0.3s;
             text-transform: uppercase; font-weight: bold;
         }
         button:hover { background: var(--neon-blue); color: black; box-shadow: 0 0 30px var(--neon-blue); }
-        #status { margin-top: 15px; font-size: 0.9rem; color: #555; }
+        #status { margin-top: 8px; font-size: 0.8rem; color: #555; }
+
+        @media (max-height: 500px) {
+            body { padding: 6px; }
+            h1 { font-size: 1.25rem; margin-bottom: 6px; }
+            .container { padding: 8px 12px; max-height: calc(100dvh - 36px); }
+            .data-field { padding: 4px 0; }
+            .value { font-size: 1rem; }
+            .container > .data-field:last-of-type { margin-bottom: 6px; }
+            button { padding: 6px 14px; }
+            #status { margin-top: 4px; font-size: 0.7rem; }
+        }
     </style>
 </head>
 <body>
