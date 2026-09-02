@@ -13,7 +13,7 @@
             font-family: 'Segoe UI', 'Courier New', monospace; 
             display: flex; flex-direction: column; align-items: center;
             justify-content: center; min-height: 100dvh; margin: 0; padding: 12px;
-            overflow: hidden;
+            overflow: auto;
         }
         h1 { 
             text-transform: uppercase; letter-spacing: 5px; font-size: 1.6rem;
@@ -45,6 +45,18 @@
         }
         button:hover { background: var(--neon-blue); color: black; box-shadow: 0 0 30px var(--neon-blue); }
         #status { margin-top: 8px; font-size: 0.8rem; color: #555; }
+
+        @media (orientation: portrait) {
+            body { justify-content: flex-start; }
+            .container { max-height: none; }
+            .data-field {
+                flex-direction: column; align-items: flex-start; gap: 3px;
+            }
+            .value {
+                width: 100%; overflow: visible; overflow-wrap: anywhere;
+                white-space: normal; text-align: left; line-height: 1.25;
+            }
+        }
 
         @media (max-height: 500px) {
             body { padding: 6px; }

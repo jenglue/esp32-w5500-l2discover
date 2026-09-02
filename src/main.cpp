@@ -29,6 +29,9 @@ void drawMarquee(int x, int y, int maxWidth, const char* text, int &scrollOffset
 bool isMarqueeCycleDone(const char* text, int scrollOffset);
 void parseLLDP(uint8_t* d, int l);
 void parseCDP(uint8_t* d, int l);
+void startDhcpTask();
+void handleEthernetLink();
+void clearNetworkData();
 
 // --- 全域對象 ---
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE, OLED_SCL, OLED_SDA);
@@ -77,11 +80,11 @@ String lastBLEData;
 volatile bool dhcpObtained = false;
 volatile bool dhcpTaskRunning = false;
 volatile bool dhcpTaskDone = false;
+bool lastLinkState = false;
 
 // DHCP 在 Core 0 背景執行，不影響 UI
 void dhcpTask(void* param) {
     Serial.println("[DHCP] Background task started on Core 0");
-    dhcpTaskRunning = true;
 
     // 關閉 MACRAW socket 以便 DHCP 使用
     w5500.execCmdSn(0, Sock_CLOSE);
@@ -101,6 +104,58 @@ void dhcpTask(void* param) {
     dhcpTaskRunning = false;
     Serial.println("[DHCP] Background task finished");
     vTaskDelete(NULL); // 任務結束自刪
+}
+
+void startDhcpTask() {
+    if (dhcpTaskRunning) return;
+
+    dhcpTaskDone = false;
+    dhcpTaskRunning = true;
+    xTaskCreatePinnedToCore(dhcpTask, "DHCP", 4096, NULL, 1, NULL, 0);
+    Serial.println("[DHCP] Background task launched");
+}
+
+void closeMacrawSocket() {
+    w5500.execCmdSn(0, Sock_CLOSE);
+    w5500.writeSnIR(0, 0xFF);
+}
+
+void clearNetworkData() {
+    strcpy(swName, "Searching...");
+    strcpy(swPort, "Waiting LLDP/CDP...");
+    strcpy(swVlan, "N/A");
+    hasDiscoveryData = false;
+    packetCount = 0;
+    scrollOffsetName = 0;
+    scrollOffsetPort = 0;
+    marqueeFirstCycleDone = false;
+    marqueePauseStart = 0;
+    pageEnteredTime = millis();
+    lastBLEData = "";
+
+    uint8_t zeroAddress[] = { 0, 0, 0, 0 };
+    w5500.setIPAddress(zeroAddress);
+    w5500.setGatewayIp(zeroAddress);
+    w5500.setSubnetMask(zeroAddress);
+}
+
+void handleEthernetLink() {
+    if (dhcpTaskRunning) return;
+
+    bool linkUp = Ethernet.link() != 0;
+    if (linkUp == lastLinkState) return;
+
+    lastLinkState = linkUp;
+    if (!linkUp) {
+        Serial.println("[ETH] Link down; clearing discovery data");
+        closeMacrawSocket();
+        dhcpObtained = false;
+        clearNetworkData();
+        updateBLE();
+    } else {
+        Serial.println("[ETH] Link up; starting DHCP");
+        startDhcpTask();
+    }
 }
 
 // --- 輔助函式：顯示 QR Code (右對齊，避免與標題重疊) ---
@@ -190,10 +245,8 @@ void setup() {
     Ethernet.begin(mac, ip);
     Serial.println("[ETH] W5500 initialized (MAC set)");
 
-    // 在 Core 0 背景執行 DHCP，不阻塞 UI
-    // DHCP 完成後會在 loop() 中重新開啟 MACRAW socket
-    xTaskCreatePinnedToCore(dhcpTask, "DHCP", 4096, NULL, 1, NULL, 0);
-    Serial.println("[DHCP] Background task launched");
+    lastLinkState = Ethernet.link() != 0;
+    if (lastLinkState) startDhcpTask();
 
     // BLE 初始化
     Serial.println("[BLE] Init...");
@@ -259,13 +312,16 @@ void loop() {
     if (dhcpTaskDone) {
         dhcpTaskDone = false;
         // DHCP task 已結束，重新開啟 MACRAW socket
-        w5500.execCmdSn(0, Sock_CLOSE);
-        w5500.writeSnIR(0, 0xFF);
-        w5500.writeSnMR(0, SnMR::MACRAW);
-        w5500.execCmdSn(0, Sock_OPEN);
-        Serial.println("[ETH] MACRAW socket reopened after DHCP");
-        updateBLE();
+        if (Ethernet.link()) {
+            closeMacrawSocket();
+            w5500.writeSnMR(0, SnMR::MACRAW);
+            w5500.execCmdSn(0, Sock_OPEN);
+            Serial.println("[ETH] MACRAW socket reopened after DHCP");
+            updateBLE();
+        }
     }
+
+    handleEthernetLink();
 
     // 定期同步 DHCP 等非封包觸發的狀態；資料未變化時不重複發送通知
     if (millis() - lastBLEUpdateTime >= BLE_UPDATE_INTERVAL) {
