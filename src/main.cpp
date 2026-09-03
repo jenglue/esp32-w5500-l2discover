@@ -32,6 +32,9 @@ void parseCDP(uint8_t* d, int l);
 void startDhcpTask();
 void handleEthernetLink();
 void clearNetworkData();
+void clearDiscoveryData();
+void clearEthernetConfig();
+void openMacrawSocket();
 
 // --- 全域對象 ---
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE, OLED_SCL, OLED_SDA);
@@ -80,6 +83,7 @@ String lastBLEData;
 volatile bool dhcpObtained = false;
 volatile bool dhcpTaskRunning = false;
 volatile bool dhcpTaskDone = false;
+volatile bool dhcpLinkChangedDuringTask = false;
 bool lastLinkState = false;
 
 // DHCP 在 Core 0 背景執行，不影響 UI
@@ -97,11 +101,12 @@ void dhcpTask(void* param) {
         Serial.print("[DHCP] GW: ");
         Serial.println(Ethernet.gatewayIP());
     } else {
+        dhcpObtained = false;
         Serial.println("[DHCP] Failed, no IP");
     }
 
-    dhcpTaskDone = true;
     dhcpTaskRunning = false;
+    dhcpTaskDone = true;
     Serial.println("[DHCP] Background task finished");
     vTaskDelete(NULL); // 任務結束自刪
 }
@@ -110,6 +115,7 @@ void startDhcpTask() {
     if (dhcpTaskRunning) return;
 
     dhcpTaskDone = false;
+    dhcpLinkChangedDuringTask = false;
     dhcpTaskRunning = true;
     xTaskCreatePinnedToCore(dhcpTask, "DHCP", 4096, NULL, 1, NULL, 0);
     Serial.println("[DHCP] Background task launched");
@@ -120,7 +126,7 @@ void closeMacrawSocket() {
     w5500.writeSnIR(0, 0xFF);
 }
 
-void clearNetworkData() {
+void clearDiscoveryData() {
     strcpy(swName, "Searching...");
     strcpy(swPort, "Waiting LLDP/CDP...");
     strcpy(swVlan, "N/A");
@@ -132,29 +138,50 @@ void clearNetworkData() {
     marqueePauseStart = 0;
     pageEnteredTime = millis();
     lastBLEData = "";
+}
 
+void clearEthernetConfig() {
     uint8_t zeroAddress[] = { 0, 0, 0, 0 };
     w5500.setIPAddress(zeroAddress);
     w5500.setGatewayIp(zeroAddress);
     w5500.setSubnetMask(zeroAddress);
 }
 
-void handleEthernetLink() {
-    if (dhcpTaskRunning) return;
+void clearNetworkData() {
+    clearDiscoveryData();
+    clearEthernetConfig();
+}
 
+void openMacrawSocket() {
+    closeMacrawSocket();
+    w5500.writeSnMR(0, SnMR::MACRAW);
+    w5500.execCmdSn(0, Sock_OPEN);
+    Serial.println("[ETH] MACRAW socket opened");
+}
+
+void handleEthernetLink() {
     bool linkUp = Ethernet.link() != 0;
     if (linkUp == lastLinkState) return;
 
     lastLinkState = linkUp;
     if (!linkUp) {
         Serial.println("[ETH] Link down; clearing discovery data");
-        closeMacrawSocket();
         dhcpObtained = false;
-        clearNetworkData();
+        clearDiscoveryData();
+        if (dhcpTaskRunning) {
+            dhcpLinkChangedDuringTask = true;
+        } else {
+            closeMacrawSocket();
+            clearEthernetConfig();
+        }
         updateBLE();
     } else {
         Serial.println("[ETH] Link up; starting DHCP");
-        startDhcpTask();
+        if (dhcpTaskRunning) {
+            dhcpLinkChangedDuringTask = true;
+        } else {
+            startDhcpTask();
+        }
     }
 }
 
@@ -311,12 +338,26 @@ void loop() {
     // 2. DHCP 背景任務完成後重新開啟 MACRAW
     if (dhcpTaskDone) {
         dhcpTaskDone = false;
-        // DHCP task 已結束，重新開啟 MACRAW socket
-        if (Ethernet.link()) {
+        bool linkUp = Ethernet.link() != 0;
+        bool linkChangedDuringTask = dhcpLinkChangedDuringTask;
+        dhcpLinkChangedDuringTask = false;
+
+        if (!linkUp) {
+            dhcpObtained = false;
+            clearNetworkData();
             closeMacrawSocket();
-            w5500.writeSnMR(0, SnMR::MACRAW);
-            w5500.execCmdSn(0, Sock_OPEN);
-            Serial.println("[ETH] MACRAW socket reopened after DHCP");
+            lastLinkState = false;
+            updateBLE();
+        } else if (linkChangedDuringTask) {
+            dhcpObtained = false;
+            clearNetworkData();
+            closeMacrawSocket();
+            lastLinkState = true;
+            Serial.println("[ETH] Link changed during DHCP; restarting DHCP");
+            startDhcpTask();
+            updateBLE();
+        } else {
+            openMacrawSocket();
             updateBLE();
         }
     }
@@ -379,9 +420,15 @@ void loop() {
 void updateBLE() {
     if (pCharacteristic == nullptr) return;
 
+    String localIp = "0.0.0.0";
+    String gatewayIp = "0.0.0.0";
+    if (!dhcpTaskRunning) {
+        localIp = Ethernet.localIP().toString();
+        gatewayIp = Ethernet.gatewayIP().toString();
+    }
+
     String data = String(swName) + "|" + String(swPort) + "|" +
-                  String(swVlan) + "|" + Ethernet.localIP().toString() + "|" +
-                  Ethernet.gatewayIP().toString();
+                  String(swVlan) + "|" + localIp + "|" + gatewayIp;
     if (data == lastBLEData) {
         lastBLEUpdateTime = millis();
         return;
@@ -456,15 +503,14 @@ void drawUI() {
     else if (currentPage == 1) { // IP Info
         u8g2.drawStr(0, 10, "2. IP STATUS");
         u8g2.drawHLine(0, 13, 118);
-        if (dhcpObtained) {
+        if (dhcpObtained && !dhcpTaskRunning) {
             u8g2.setCursor(0, 28); u8g2.print("IP: "); u8g2.print(Ethernet.localIP().toString());
             u8g2.setCursor(0, 42); u8g2.print("GW: "); u8g2.print(Ethernet.gatewayIP().toString());
         } else {
             u8g2.drawStr(0, 28, "IP: DHCP pending...");
         }
-        uint8_t phy = Ethernet.phyState();
-        u8g2.setCursor(0, 58); u8g2.print("PHY: "); u8g2.print(Ethernet.link() ? "Link-Up" : "Link-Down");
-        if (Ethernet.link()) { u8g2.print(" "); u8g2.print(Ethernet.speedReport()); }
+        u8g2.setCursor(0, 58); u8g2.print("PHY: "); u8g2.print(lastLinkState ? "Link-Up" : "Link-Down");
+        if (lastLinkState && !dhcpTaskRunning) { u8g2.print(" "); u8g2.print(Ethernet.speedReport()); }
     }
     else if (currentPage == 2) { // Traffic
         u8g2.drawStr(0, 10, "3. ANALYTICS");
