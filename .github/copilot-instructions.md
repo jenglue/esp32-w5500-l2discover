@@ -1,29 +1,37 @@
-# Copilot Instructions for LilyGO T-ETH-Lite (W5500) Project
+# Copilot Instructions for ESP32 W5500 Layer-2 Discovery Project
 
 You are an expert embedded systems developer specializing in ESP32 and W5500 Ethernet controllers.
 
 ## Hardware Context
-- **Board:** LilyGO T-ETH-Lite (ESP32-PICO-D4 based).
+- **Target:** ESP32 paired with a W5500 controller and SSD1306 OLED.
 - **Ethernet Chip:** W5500 (SPI Interface).
 - **Display:** Built-in SSD1306 OLED (128x64) via I2C.
 - **Button:** Built-in Boot button on GPIO 0.
 
-## Critical Pin Mapping (DO NOT CHANGE)
-- **W5500 SPI:** MOSI=23, MISO=19, SCLK=18, CS=2.
-- **W5500 Control:** RST=4, **EN=12 (Must be HIGH to power the chip)**.
-- **OLED I2C:** SDA=13, SCL=15.
+## Current Firmware Pin Mapping
+
+These values match the definitions currently compiled in `src/main.cpp`. They are the documentation baseline until the physical board revision is verified.
+
+- **W5500 SPI:** SCLK=18, MISO=23, MOSI=19, CS=5.
+- **W5500 Control:** RST=4.
+- **OLED I2C:** SDA=21, SCL=22.
+- **Button:** GPIO 0 with `INPUT_PULLUP`.
+
+The current firmware does not configure a separate W5500 enable pin. Do not add GPIO 12 power-control instructions unless the hardware and firmware are changed together.
 
 ## Coding Standards
-1. **Library Usage:** - Use `Ethernet3.h` (by sstaub) for advanced W5500 features like MACRAW mode and PHY status.
+1. **Library Usage:** - Use `Ethernet3.h` (by sstaub) for W5500 features used by this project, including MACRAW mode and PHY status.
    - Use `U8g2lib.h` for OLED display (Hardware I2C preferred).
    - Use `QRCode.h` for generating QR codes on the OLED.
-   - Use `NimBLE-Arduino` or standard `BLEDevice.h` for Bluetooth LE functionality.
+   - The current firmware uses the ESP32 Arduino BLE headers (`BLEDevice.h`, `BLEServer.h`, and related headers). Do not describe it as a NimBLE API migration unless the code is migrated explicitly.
 
-2. **Initialization Sequence:** - Always set `GPIO 12` to `HIGH` first to power the W5500.
-   - Perform a hardware reset on `GPIO 4` before calling `Ethernet.init()`.
+2. **Initialization Sequence:** - Initialize the OLED and button, then pulse the W5500 hardware reset on `GPIO 4`.
+   - Start SPI with SCLK=18, MISO=23, and MOSI=19.
+   - Call `Ethernet.setCsPin(5)` and `Ethernet.init(1)` before Ethernet setup.
+   - Initialize Ethernet with the firmware MAC and `0.0.0.0`, run DHCP in the background when the link is up, and open socket 0 in MACRAW mode after DHCP completes.
 
 3. **Performance:** - Use non-blocking code. Avoid `delay()` in the `loop()`.
-   - Implement `millis()` based timers for UI refreshing (target 10-20 FPS).
+   - Use `millis()`-based timers for button debounce, page transitions, marquee movement, and BLE synchronization.
 
 4. **UI Design:** - Screen resolution is 128x64. Use scannable fonts (e.g., `u8g2_font_6x12_tf`).
    - For QR Codes, ensure a 2x2 pixel scale for better scannability by smartphones.
@@ -32,7 +40,15 @@ You are an expert embedded systems developer specializing in ESP32 and W5500 Eth
 - **Device Name:** "T-Lite-Sniffer".
 - **Service UUID:** "4fafc201-1fb5-459e-8fcc-c5c9c331914b".
 - **Characteristic UUID:** "beb5483e-36e1-4688-b7f5-ea07361b26a8".
-- **Data Format:** Pipe-separated strings (e.g., "SwitchName|PortID").
+- **Data Format:** Five pipe-separated fields: `SwitchName|PortID|VLAN|IP|Gateway`.
+
+## Documentation Source of Truth
+
+- `src/main.cpp` is the source of truth for current pin definitions, initialization order, runtime behavior, and parser support.
+- `platformio.ini` is the source of truth for dependency constraints and the PlatformIO environment.
+- `src/webbt.html` is the source of truth for the dashboard's BLE connection and payload decoding.
+- `docs/DEVELOPMENT.md` and `docs/PROTOCOL.md` contain the maintained development workflow and current data contracts.
+- If physical board documentation disagrees with the current firmware, record a separate hardware/firmware change instead of silently changing these instructions.
 
 ## Git Workflow
 
